@@ -1,1 +1,1 @@
-# go-lynxon
+# go-lyncs
