@@ -20,13 +20,10 @@ type configType struct {
 
 ////////////////////////////////
 type poolType struct {
-    idle map[uint64]C.lua_State
-    inuse map[uint64]C.lua_State
+    idle map[int64]*C.lua_State
+    inuse map[int64]*C.lua_State
     code string
     buffer []byte
-    
-    // ...
-    
 }
 
 // ...
@@ -34,7 +31,7 @@ type poolType struct {
 ////////////////////////////////
 type runtimeType struct {
     cfg *configType
-    vm map[string]*poolType
+    poolMap map[string]*poolType
     
     // ...
     
