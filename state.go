@@ -27,10 +27,10 @@ var stateRemoveMap = map[string][]string{
 }
 
 var stateReadonlyList = `
-    _G.table = _set(table)
-    _G.string = _set(string)
-    _G.math = _set(math)
-    _G.bit = _set(bit)
+    table = _set(table)
+    string = _set(string)
+    math = _set(math)
+    bit = _set(bit)
     -- built-in ...
 `
 
@@ -129,8 +129,8 @@ function setRO()
     end
 ` + stateReadonlyList + `
     setfenv(2, _set(_G))
-    _G.setfenv = nil
-    _G.setRO = nil
+    setfenv = nil
+    setRO = nil
 end
         `)
         defer C.free(unsafe.Pointer(cCode))
