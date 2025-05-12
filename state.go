@@ -23,7 +23,7 @@ import (
 var stateRemoveMap = map[string][]string{
 	"string": {"dump"},
 	"math": {"randomseed","random"},
-	"_G": {"jit","collectgarbage","rawget","rawset","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv"/*,"print"*/},
+	"_G": {"jit","collectgarbage","rawget","rawset","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv","newproxy","pcall","xpcall"},
 }
 
 var stateReadonlyList = `
@@ -58,7 +58,7 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 		bc = C.GoBytes(unsafe.Pointer(buffer.bc), C.int(n))
 		defer C.free(unsafe.Pointer(buffer.bc))
 	}
-	err = stateCall(s)
+	err = stateCall(s, 0)
 	if err != nil {
 		stateClose(s)
 		return nil, nil, err
@@ -84,7 +84,7 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 		stateClose(s)
 		return nil, fmt.Errorf("load failed @stateFromBC")
 	}
-	err = stateCall(s)
+	err = stateCall(s, 0)
 	if err != nil {
 		stateClose(s)
 		return nil, err
@@ -116,8 +116,20 @@ func stateSandbox(s *C.lua_State) (string, error) {
 
 	// builtin ...
 
+	codeCallbacks := "local f = {"
+	if len(lRuntime.cfg.Callbacks) > 0 {
+		for _, v := range lRuntime.cfg.Callbacks {
+			codeCallbacks += `["`+v+`"]=true,`
+		}
+	}
+	codeCallbacks += "}"
+	codeDebug := "print = function(...) end;"
+	if lRuntime.cfg.Debug {
+		codeDebug = ""
+	}
 	codeSandbox += `
 function setRO()
+` + codeCallbacks + `
 	local _set = function (t)
 		local p = {}
 		local mt = {
@@ -126,11 +138,7 @@ function setRO()
 				if t ~= _G then
 					error("variable read-only", 2)
 				end
-				if k=="session" then
-					t[k] = v
-					return
-				end
-				if (k=="init" or k=="run") and t[k]==nil and type(v)=="function" then
+				if f[k] and t[k]==nil and type(v)=="function" then
 					t[k] = v
 					return
 				end
@@ -140,6 +148,7 @@ function setRO()
 		setmetatable(p, mt)
 		return p
 	end
+` + codeDebug + `
 ` + stateReadonlyList + `
 	setfenv(2, _set(_G))
 	setfenv = nil
@@ -151,20 +160,33 @@ setRO();
 }
 
 ////////////////////////////////
-func stateCall(s *C.lua_State) (error) {
-	if C.LUA_OK != C.lua_pcall(s, 0, 0, 0) {
-		msg := C.GoString(C.lua_tolstring(s, -1, nil))
-		C.lua_settop(s, C.lua_gettop(s)-1)
-		msgS := strings.Split(msg, `"]:`)
-		if len(msgS) < 2 {
-			return fmt.Errorf(msg + " @stateCall")
-		}
-		if len(msgS[1]) > 30 {
-			msgS[1] = msgS[1][:30] + ".."
-		}
-		return fmt.Errorf(msgS[1] + " @stateCall")
+func stateCall(s *C.lua_State, nResult C.int) (error) {
+	if C.LUA_OK != C.lua_pcall(s, 0, nResult, 0) {
+		return stateError(s, "stateCall")
 	}
 	return nil
+}
+
+////////////////////////////////
+func stateCallFunc(s *C.lua_State, f string, nResult C.int) (error) {
+	cFunc := C.CString(f)
+	defer C.free(unsafe.Pointer(cFunc))
+	C.lua_getfield(s, C.LUA_GLOBALSINDEX, cFunc)
+	return stateCall(s, nResult)
+}
+
+////////////////////////////////
+func stateError(s *C.lua_State, caller string) (error) {
+	msg := C.GoString(C.lua_tolstring(s, -1, nil))
+	C.lua_settop(s, C.lua_gettop(s)-1)
+	msgS := strings.Split(msg, `"]:`)
+	if len(msgS) < 2 {
+		return fmt.Errorf(msg + " @"+caller)
+	}
+	if len(msgS[1]) > 30 {
+		msgS[1] = msgS[1][:30] + ".."
+	}
+	return fmt.Errorf(msgS[1] + " @"+caller)
 }
 
 ////////////////////////////////
@@ -173,8 +195,10 @@ func stateClose(s *C.lua_State) {
 }
 
 ////////////////////////////////
-func stateClean(s *C.lua_State) {
-
+func stateClean(s *C.lua_State, top C.int) {
+	C.lua_settop(s, top)
+	stateSetTableFieldNil(s, "_G", []string{"session"})
+    
 	// ...
 
 }
@@ -214,5 +238,209 @@ func stateSetTableFieldString(s *C.lua_State, table string, field []string, valu
 	})
 }
 
-// ...
+////////////////////////////////
+func stateApplySession(s *C.lua_State, session *DataSessionType) {
+	////////////////////////////////
+	_setTableByMap := func(m map[string]string, i int, k string) {
+		cKey := C.CString("")
+		C.free(unsafe.Pointer(cKey))
+		lenKey := len(m)
+		if lenKey <= 0 {
+			return
+		}
+		C.lua_createtable(s, 0, C.int(lenKey))
+		for k, v := range m {
+			cKey = C.CString(v)
+			C.lua_pushstring(s, cKey)
+			C.free(unsafe.Pointer(cKey))
+			cKey = C.CString(k)
+			C.lua_setfield(s, -2, cKey)
+			C.free(unsafe.Pointer(cKey))
+		}
+		if i > 0 {
+			C.lua_rawseti(s, -2, C.int(i))
+		} else {
+			cKey = C.CString(k)
+			C.lua_setfield(s, -2, cKey);
+			C.free(unsafe.Pointer(cKey))
+		}
+	}
+	////////////////////////////////
+	_setTableByMapList := func(l []map[string]string, k string) {
+		cKey := C.CString("")
+		C.free(unsafe.Pointer(cKey))
+		lenKey := len(l)
+		if lenKey <= 0 {
+			return
+		}
+		C.lua_createtable(s, C.int(lenKey), 0)
+		for i := 0; i < lenKey; i ++ {
+			_setTableByMap(l[i], i+1, "")
+		}
+		cKey = C.CString(k)
+		C.lua_setfield(s, -2, cKey);
+		C.free(unsafe.Pointer(cKey))
+	}
+	////////////////////////////////
+	_setTableMapState := func(m map[string]map[string]map[string]string) {
+		cKey := C.CString("")
+		C.free(unsafe.Pointer(cKey))
+		lenKey := len(m)
+		if lenKey <= 0 {
+			return
+		}
+		for k, _ := range m {
+			lenKey = len(m[k])
+			if lenKey <= 0 {
+				continue
+			}
+			C.lua_createtable(s, 0, C.int(lenKey))
+			for k2, _ := range m[k] {
+				_setTableByMap(m[k][k2], 0, k2)
+			}
+			cKey = C.CString(k)
+			C.lua_setfield(s, -2, cKey);
+			C.free(unsafe.Pointer(cKey))
+		}
+	}
+	////////////////////////////////
+	C.lua_createtable(s, 0, 8)
+	_setTableByMap(session.Block, 0, "block")
+	_setTableByMap(session.Tx, 0, "tx")
+	_setTableByMap(session.Op, 0, "op")
+	_setTableByMap(session.OpScript, 0, "opScript")
+	_setTableByMap(session.ExData, 0, "exData")
+	_setTableByMapList(session.TxInputs, "txInputs")
+	_setTableByMapList(session.TxOutputs, "txOutputs")
+	cKey := C.CString("session")
+	C.lua_setfield(s, C.LUA_GLOBALSINDEX, cKey);
+	C.free(unsafe.Pointer(cKey))
+	////////////////////////////////
+	C.lua_createtable(s, 0, 8)
+	_setTableMapState(session.State)
+	cKey = C.CString("state")
+	C.lua_setfield(s, C.LUA_GLOBALSINDEX, cKey);
+	C.free(unsafe.Pointer(cKey))
+}
 
+////////////////////////////////
+func stateGetResult(s *C.lua_State) (*DataResultType, error) {
+	////////////////////////////////
+	_setResultToMap := func(r *map[string]string, size int) {
+		if *r == nil {
+			*r = make(map[string]string, size)
+		}
+		if C.lua_type(s, -2) == C.LUA_TSTRING && C.lua_type(s, -1) == C.LUA_TSTRING {
+			(*r)[C.GoString(C.lua_tolstring(s, -2, nil))] = C.GoString(C.lua_tolstring(s, -1, nil))
+		}
+	}
+	////////////////////////////////
+	_setResultToList := func(r *[]string, size int) {
+		if *r == nil {
+			*r = make([]string, 0, size)
+		}
+		if C.lua_type(s, -2) == C.LUA_TNUMBER && C.lua_type(s, -1) == C.LUA_TSTRING {
+			*r = append(*r, C.GoString(C.lua_tolstring(s, -1, nil)))
+		}
+	}
+	////////////////////////////////
+	_getTableData := func(f func()) {
+		if C.lua_type(s, -1) != C.LUA_TTABLE {
+			return
+		}
+		C.lua_pushnil(s)
+		for C.lua_next(s, -2) != 0 {
+			f()
+			C.lua_settop(s, C.lua_gettop(s)-1)
+		}
+	}
+	////////////////////////////////
+	_getTableMapList := func(size1 int, size2 int) (map[string][]string) {
+		if C.lua_type(s, -1) != C.LUA_TTABLE {
+			return nil
+		}
+		result := make(map[string][]string, size1)
+		key := ""
+		_getTableData(func() {
+			if C.lua_type(s, -2) == C.LUA_TSTRING && C.lua_type(s, -1) == C.LUA_TTABLE {
+				key = C.GoString(C.lua_tolstring(s, -2, nil))
+				data := make([]string, 0, size2)
+				_getTableData(func() {
+					_setResultToList(&data, size2)
+					result[key] = data
+				})
+			}
+		})
+		return result
+	}
+	////////////////////////////////
+	_getTableMapState := func(size1 int, size2 int, size3 int) (map[string]map[string]map[string]string) {
+		if C.lua_type(s, -1) != C.LUA_TTABLE {
+			return nil
+		}
+		result := make(map[string]map[string]map[string]string, size1)
+		key1 := ""
+		key2 := ""
+		_getTableData(func() {
+			if C.lua_type(s, -2) == C.LUA_TSTRING && C.lua_type(s, -1) == C.LUA_TTABLE {
+				key1 = C.GoString(C.lua_tolstring(s, -2, nil))
+				_getTableData(func() {
+					if C.lua_type(s, -2) == C.LUA_TSTRING && C.lua_type(s, -1) == C.LUA_TTABLE {
+						if result[key1] == nil {
+							result[key1] = make(map[string]map[string]string, size2)
+						}
+						key2 = C.GoString(C.lua_tolstring(s, -2, nil))
+						data := make(map[string]string, size3)
+						_getTableData(func() {
+							_setResultToMap(&data, size3)
+							result[key1][key2] = data
+						})
+					}
+				})
+			}
+		})
+		return result
+	}
+	////////////////////////////////
+	if C.lua_type(s, -1) != C.LUA_TTABLE {
+		return nil, fmt.Errorf("not a table @stateGetResult")
+	}
+	defer C.lua_settop(s, C.lua_gettop(s)-1)
+	result := &DataResultType{}
+	key := ""
+	C.lua_pushnil(s)
+	for C.lua_next(s, -2) != 0 {
+		if C.lua_type(s, -2) != C.LUA_TSTRING {
+			C.lua_settop(s, C.lua_gettop(s)-1)
+			continue
+		}
+		key = C.GoString(C.lua_tolstring(s, -2, nil))
+		if key == "op" {
+			_getTableData(func() {
+				_setResultToMap(&result.Op, 8)
+			})
+		} else if key == "opScript" {
+			_getTableData(func() {
+				_setResultToMap(&result.OpScript, 16)
+			})
+		} else if key == "opRules" {
+			_getTableData(func() {
+				_setResultToMap(&result.OpRules, 16)
+			})
+		} else if key == "exData" {
+			_getTableData(func() {
+				_setResultToMap(&result.ExData, 8)
+			})
+		} else if key == "keysRO" {
+			result.KeysRO = _getTableMapList(4, 4)
+		} else if key == "keysRW" {
+			result.KeysRW = _getTableMapList(4, 4)
+		} else if key == "state" {
+			result.State = _getTableMapState(4, 4, 8)
+		}
+		C.lua_settop(s, C.lua_gettop(s)-1)
+	}
+	return result, nil
+}
+
+// ...

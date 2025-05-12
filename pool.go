@@ -27,8 +27,8 @@ func poolInit(key string) (error) {
 		}
 	}
 	lRuntime.poolMap[key] = &poolType{
-		idle: make(map[int64]*C.lua_State, lRuntime.cfg.nWorkers),
-		inuse: make(map[int64]*C.lua_State, lRuntime.cfg.nWorkers),
+		idle: make(map[int64]*C.lua_State, lRuntime.cfg.NumWorkers),
+		inuse: make(map[int64]*C.lua_State, lRuntime.cfg.NumWorkers),
 	}
 	return nil
 }
@@ -47,6 +47,7 @@ func PoolFromCode(key string, code string) (error) {
 	lRuntime.poolMap[key].idle[time.Now().UnixNano()] = s
 	lRuntime.poolMap[key].code = code
 	lRuntime.poolMap[key].bc = bc
+	lRuntime.poolMap[key].top = C.lua_gettop(s)
 	return nil
 }
 
@@ -63,6 +64,7 @@ func PoolFromBC(key string, bc []byte) (error) {
 	}
 	lRuntime.poolMap[key].idle[time.Now().UnixNano()] = s
 	lRuntime.poolMap[key].bc = bc
+	lRuntime.poolMap[key].top = C.lua_gettop(s)
 	return nil
 }
 
@@ -83,11 +85,60 @@ func PoolDestroy(key string) (error) {
 }
 
 ////////////////////////////////
-func PoolState(key string) (/*, */error) {
+func poolLockState(pool *poolType) (*C.lua_State, int64, error) {
+	for i, s := range pool.idle {
+		_, exists := pool.inuse[i]
+		if !exists {
+			pool.inuse[i] = s
+			return s, i, nil
+		}
+	}
+	if len(pool.idle) < lRuntime.cfg.NumWorkers {
+		if pool.bc == nil {
+			return nil, 0, fmt.Errorf("nil bytecode @poolLockState")
+		}
+		s, err := stateFromBC(pool.bc)
+		if err != nil {
+			return nil, 0, err
+		}
+		i := time.Now().UnixNano()
+		pool.idle[i] = s
+		pool.inuse[i] = s
+		return s, i, nil
+	}
+	return nil, 0, fmt.Errorf("no available @poolLockState")
+}
 
-	// ...
+////////////////////////////////
+func poolUnlockState(pool *poolType, index int64) {
+	delete(pool.inuse, index)
+}
 
-	return /*, */nil
+////////////////////////////////
+func PoolCallFunc(key string, f string, session *DataSessionType) (*DataResultType, error) {
+	if key == "" {
+		return nil, fmt.Errorf("key empty @PoolCallFunc")
+	}
+	pool, exists := lRuntime.poolMap[key]
+	if !exists {
+		return nil, fmt.Errorf("pool empty @PoolCallFunc")
+	}
+	s, index, err := poolLockState(pool)
+	if err != nil {
+		return nil, err
+	}
+	defer poolUnlockState(pool, index)
+	stateClean(s, pool.top)
+	stateApplySession(s, session)
+	err = stateCallFunc(s, f, 1)
+	if err != nil {
+		return nil, err
+	}
+	result, err := stateGetResult(s)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 ////////////////////////////////

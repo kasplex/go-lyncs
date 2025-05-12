@@ -7,15 +7,12 @@ package lyncs
 */
 import "C"
 
-// ...
-
 ////////////////////////////////
-type configType struct {
-	nWorkers uint
-	fBuiltin map[string]C.lua_CFunction
-
-	// ...
-
+type ConfigType struct {
+	NumWorkers int
+	//FBuiltin map[string]C.lua_CFunction
+	Callbacks []string
+	Debug bool
 }
 
 ////////////////////////////////
@@ -24,15 +21,41 @@ type poolType struct {
 	inuse map[int64]*C.lua_State
 	code string
 	bc []byte
+	top C.int
 }
 
 // ...
 
 ////////////////////////////////
 type runtimeType struct {
-	cfg *configType
+	cfg *ConfigType
 	poolMap map[string]*poolType
-
 	// ...
-
 }
+
+////////////////////////////////
+type DataSessionType struct {
+	Block map[string]string
+	Tx map[string]string
+	TxInputs []map[string]string
+	TxOutputs []map[string]string
+	Op map[string]string
+	OpScript map[string]string
+	State map[string]map[string]map[string]string
+	// ...
+	ExData map[string]string
+}
+
+////////////////////////////////
+type DataResultType struct {
+	Op map[string]string  // accept|error|feeLeast|isRecycle
+	OpScript map[string]string
+	OpRules map[string]string
+	KeysRO map[string][]string
+	KeysRW map[string][]string
+	State map[string]map[string]map[string]string
+	// ...
+	ExData map[string]string
+}
+
+// ...

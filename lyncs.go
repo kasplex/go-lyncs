@@ -2,8 +2,9 @@
 ////////////////////////////////
 package lyncs
 
-// ...
-
+//#cgo CFLAGS: -I/var/luajit2/src
+//#cgo LDFLAGS: -L/var/luajit2/src -lluajit -ldl -lm -static
+import "C"
 import (
 
 	// ...
@@ -15,8 +16,8 @@ var lRuntime runtimeType
 
 ////////////////////////////////
 func init() {
-	lRuntime.cfg = &configType{
-		nWorkers: 8,
+	lRuntime.cfg = &ConfigType{
+		NumWorkers: 8,
 		// ...
 	}
 	lRuntime.poolMap = make(map[string]*poolType)
@@ -24,7 +25,7 @@ func init() {
 }
 
 ////////////////////////////////
-func Config(cfg *configType) {
+func Config(cfg *ConfigType) {
 
 	// validate cfg ...
 
