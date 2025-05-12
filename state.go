@@ -167,6 +167,18 @@ func stateCallFunc(s *C.lua_State, f string, nResult C.int) (error) {
 }
 
 ////////////////////////////////
+func stateCheckFunc(s *C.lua_State, f string) (bool) {
+	cFunc := C.CString(f)
+	defer C.free(unsafe.Pointer(cFunc))
+	C.lua_getfield(s, C.LUA_GLOBALSINDEX, cFunc)
+	defer C.lua_settop(s, C.lua_gettop(s)-1)
+	if C.lua_type(s, -1) != C.LUA_TFUNCTION {
+		return false
+	}
+	return true
+}
+
+////////////////////////////////
 func stateError(s *C.lua_State, caller string) (error) {
 	msg := C.GoString(C.lua_tolstring(s, -1, nil))
 	C.lua_settop(s, C.lua_gettop(s)-1)

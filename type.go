@@ -10,8 +10,8 @@ import "C"
 ////////////////////////////////
 type ConfigType struct {
 	NumWorkers int
-	//FBuiltin map[string]C.lua_CFunction
 	Callbacks []string
+	Builtin map[string]string
 	Debug bool
 }
 

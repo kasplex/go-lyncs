@@ -17,7 +17,7 @@ import (
 ////////////////////////////////
 func poolInit(key string) (error) {
 	if key == "" {
-		return fmt.Errorf("key empty @poolInit")
+		return fmt.Errorf("empty key @poolInit")
 	}
 	_, exists := lRuntime.poolMap[key]
 	if exists {
@@ -117,11 +117,11 @@ func poolUnlockState(pool *poolType, index int64) {
 ////////////////////////////////
 func PoolCallFunc(key string, f string, session *DataSessionType) (*DataResultType, error) {
 	if key == "" {
-		return nil, fmt.Errorf("key empty @PoolCallFunc")
+		return nil, fmt.Errorf("empty key @PoolCallFunc")
 	}
 	pool, exists := lRuntime.poolMap[key]
 	if !exists {
-		return nil, fmt.Errorf("pool empty @PoolCallFunc")
+		return nil, fmt.Errorf("empty pool @PoolCallFunc")
 	}
 	s, index, err := poolLockState(pool)
 	if err != nil {
