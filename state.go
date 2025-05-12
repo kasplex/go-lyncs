@@ -14,9 +14,6 @@ import (
 	"fmt"
 	"unsafe"
 	"strings"
-
-	// ...
-
 )
 
 ////////////////////////////////
@@ -63,9 +60,6 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 		stateClose(s)
 		return nil, nil, err
 	}
-
-	// check sc-func exists ...
-
 	return s, bc, nil
 }
 
@@ -89,9 +83,6 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 		stateClose(s)
 		return nil, err
 	}
-
-	// check sc-func exists ...
-
 	return s, nil
 }
 
@@ -197,10 +188,7 @@ func stateClose(s *C.lua_State) {
 ////////////////////////////////
 func stateClean(s *C.lua_State, top C.int) {
 	C.lua_settop(s, top)
-	stateSetTableFieldNil(s, "_G", []string{"session"})
-    
-	// ...
-
+	stateSetTableFieldNil(s, "_G", []string{"session", "state"})
 }
 
 ////////////////////////////////
