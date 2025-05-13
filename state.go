@@ -28,7 +28,6 @@ var stateReadonlyList = `
 	string = _set(string)
 	math = _set(math)
 	bit = _set(bit)
-	-- built-in ...
 `
 
 ////////////////////////////////
@@ -104,9 +103,10 @@ func stateSandbox(s *C.lua_State) (string, error) {
 	}
 	stateSetTableFieldString(s, "_G", []string{"_VERSION"}, []string{"Lua 5.1 Lyncs"})
 	codeSandbox := ""
-
-	// builtin ...
-
+	for t, f := range lRuntime.cfg.Builtin {
+		stateReadonlyList += "\t" + t + " = _set("+ t +")\r\n"
+		codeSandbox += f + "\r\n"
+	}
 	codeCallbacks := "local f = {"
 	if len(lRuntime.cfg.Callbacks) > 0 {
 		for _, v := range lRuntime.cfg.Callbacks {
@@ -114,7 +114,7 @@ func stateSandbox(s *C.lua_State) (string, error) {
 		}
 	}
 	codeCallbacks += "}"
-	codeDebug := "print = function(...) end;"
+	codeDebug := "\tprint = function(...) end;"
 	if lRuntime.cfg.Debug {
 		codeDebug = ""
 	}
@@ -332,11 +332,11 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 		}
 	}
 	////////////////////////////////
-	_setResultToList := func(r *[]string) {
+	/*_setResultToList := func(r *[]string) {
 		if C.lua_type(s, -2) == C.LUA_TNUMBER && C.lua_type(s, -1) == C.LUA_TSTRING {
 			*r = append(*r, C.GoString(C.lua_tolstring(s, -1, nil)))
 		}
-	}
+	}*/
 	////////////////////////////////
 	_getTableData := func(f func()) {
 		if C.lua_type(s, -1) != C.LUA_TTABLE {
@@ -349,7 +349,7 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 		}
 	}
 	////////////////////////////////
-	_getTableMap := func(size int) (map[string]string) {
+	_getTableMap1 := func(size int) (map[string]string) {
 		if C.lua_type(s, -1) != C.LUA_TTABLE {
 			return nil
 		}
@@ -360,18 +360,18 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 		return result
 	}
 	////////////////////////////////
-	_getTableMapList := func(size1 int, size2 int) (map[string][]string) {
+	_getTableMap2 := func(size1 int, size2 int) (map[string]map[string]string) {
 		if C.lua_type(s, -1) != C.LUA_TTABLE {
 			return nil
 		}
-		result := make(map[string][]string, size1)
+		result := make(map[string]map[string]string, size1)
 		key := ""
 		_getTableData(func() {
 			if C.lua_type(s, -2) == C.LUA_TSTRING && C.lua_type(s, -1) == C.LUA_TTABLE {
 				key = C.GoString(C.lua_tolstring(s, -2, nil))
-				data := make([]string, 0, size2)
+				data := make(map[string]string, size2)
 				_getTableData(func() {
-					_setResultToList(&data)
+					_setResultToMap(&data)
 					result[key] = data
 				})
 			}
@@ -379,7 +379,7 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 		return result
 	}
 	////////////////////////////////
-	_getTableMapState := func(size1 int, size2 int, size3 int) (map[string]map[string]map[string]string) {
+	_getTableMap3 := func(size1 int, size2 int, size3 int) (map[string]map[string]map[string]string) {
 		if C.lua_type(s, -1) != C.LUA_TTABLE {
 			return nil
 		}
@@ -421,19 +421,17 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 		}
 		key = C.GoString(C.lua_tolstring(s, -2, nil))
 		if key == "op" {
-			result.Op = _getTableMap(8)
+			result.Op = _getTableMap1(8)
 		} else if key == "opScript" {
-			result.OpScript = _getTableMap(16)
+			result.OpScript = _getTableMap1(16)
 		} else if key == "opRules" {
-			result.OpRules = _getTableMap(16)
+			result.OpRules = _getTableMap1(16)
 		} else if key == "exData" {
-			result.ExData = _getTableMap(8)
-		} else if key == "keysRO" {
-			result.KeysRO = _getTableMapList(4, 4)
-		} else if key == "keysRW" {
-			result.KeysRW = _getTableMapList(4, 4)
+			result.ExData = _getTableMap1(8)
+		} else if key == "keyRules" {
+			result.KeyRules = _getTableMap2(4, 4)
 		} else if key == "state" {
-			result.State = _getTableMapState(4, 4, 8)
+			result.State = _getTableMap3(4, 4, 8)
 		}
 		C.lua_settop(s, C.lua_gettop(s)-1)
 	}

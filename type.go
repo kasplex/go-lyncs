@@ -51,8 +51,7 @@ type DataResultType struct {
 	Op map[string]string  // accept|error|feeLeast|isRecycle
 	OpScript map[string]string
 	OpRules map[string]string
-	KeysRO map[string][]string
-	KeysRW map[string][]string
+	KeyRules map[string]map[string]string
 	State map[string]map[string]map[string]string
 	// ...
 	ExData map[string]string

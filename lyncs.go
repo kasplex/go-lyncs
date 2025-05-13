@@ -30,9 +30,7 @@ func Config(cfg *ConfigType) {
 	if len(cfg.Callbacks) <= 0 {
 		cfg.Callbacks = lRuntime.cfg.Callbacks
 	}
-
-	// Builtin check ...
-
+	// ...
 	lRuntime.cfg = cfg
 }
 
