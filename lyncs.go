@@ -137,12 +137,11 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 							if !exists {
 								continue
 							}
-							mutex.Lock()
-							if s == nil || len(s) <= 0 {
-								stateMap[key] = nil
-							} else {
-								stateMap[key] = s
+							if len(s) == 0 {
+								s = nil
 							}
+							mutex.Lock()
+							stateMap[key] = s
 							mutex.Unlock()
 						}
 					}
