@@ -110,13 +110,16 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 			}
 			iCall = i + 1
 		}
+		var mutex sync.RWMutex
 		wg := &sync.WaitGroup{}
 		for i, _ := range slots {
 			wg.Add(1)
 			go func() {
 				for _, j := range slots[i].list {
 					for key, _ := range callList[j].KeyRules {
+						mutex.RLock()
 						callList[j].Session.State[key] = stateMap[key]
+						mutex.RUnlock()
 					}
 					if fCallBefore != nil {
 						fCallBefore(&callList[j])
@@ -134,11 +137,13 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 							if !exists {
 								continue
 							}
+							mutex.Lock()
 							if s == nil || len(s) <= 0 {
 								stateMap[key] = nil
 							} else {
 								stateMap[key] = s
 							}
+							mutex.Unlock()
 						}
 					}
 					result[j] = r
