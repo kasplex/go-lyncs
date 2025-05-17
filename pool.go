@@ -15,18 +15,18 @@ import (
 )
 
 ////////////////////////////////
-func poolInit(key string) (error) {
-	if key == "" {
-		return fmt.Errorf("empty key @poolInit")
+func poolInit(name string) (error) {
+	if name == "" {
+		return fmt.Errorf("empty name @poolInit")
 	}
-	_, exists := lRuntime.poolMap[key]
+	_, exists := lRuntime.poolMap[name]
 	if exists {
-		err := PoolDestroy(key)
+		err := PoolDestroy(name)
 		if err != nil {
 			return err
 		}
 	}
-	lRuntime.poolMap[key] = &poolType{
+	lRuntime.poolMap[name] = &poolType{
 		idle: make(map[int64]*C.lua_State, lRuntime.cfg.NumWorkers),
 		inuse: make(map[int64]*C.lua_State, lRuntime.cfg.NumWorkers),
 	}
@@ -34,43 +34,43 @@ func poolInit(key string) (error) {
 }
 
 ////////////////////////////////
-func PoolFromCode(key string, code string) (error) {
-	err := poolInit(key)
+func PoolFromCode(name string, code string) (error) {
+	err := poolInit(name)
 	if err != nil {
 		return err
 	}
 	s, bc, err := stateFromCode(code)
 	if err != nil {
-		PoolDestroy(key)
+		PoolDestroy(name)
 		return err
 	}
-	lRuntime.poolMap[key].idle[time.Now().UnixNano()] = s
-	lRuntime.poolMap[key].code = code
-	lRuntime.poolMap[key].bc = bc
-	lRuntime.poolMap[key].top = C.lua_gettop(s)
+	lRuntime.poolMap[name].idle[time.Now().UnixNano()] = s
+	lRuntime.poolMap[name].code = code
+	lRuntime.poolMap[name].bc = bc
+	lRuntime.poolMap[name].top = C.lua_gettop(s)
 	return nil
 }
 
 ////////////////////////////////
-func PoolFromBC(key string, bc []byte) (error) {
-	err := poolInit(key)
+func PoolFromBC(name string, bc []byte) (error) {
+	err := poolInit(name)
 	if err != nil {
 		return err
 	}
 	s, err := stateFromBC(bc)
 	if err != nil {
-		PoolDestroy(key)
+		PoolDestroy(name)
 		return err
 	}
-	lRuntime.poolMap[key].idle[time.Now().UnixNano()] = s
-	lRuntime.poolMap[key].bc = bc
-	lRuntime.poolMap[key].top = C.lua_gettop(s)
+	lRuntime.poolMap[name].idle[time.Now().UnixNano()] = s
+	lRuntime.poolMap[name].bc = bc
+	lRuntime.poolMap[name].top = C.lua_gettop(s)
 	return nil
 }
 
 ////////////////////////////////
-func PoolDestroy(key string) (error) {
-	pool, exists := lRuntime.poolMap[key]
+func PoolDestroy(name string) (error) {
+	pool, exists := lRuntime.poolMap[name]
 	if !exists {
 		return nil
 	}
@@ -80,12 +80,14 @@ func PoolDestroy(key string) (error) {
 	for _, s := range pool.idle {
 		stateClose(s)
 	}
-	delete(lRuntime.poolMap, key)
+	delete(lRuntime.poolMap, name)
 	return nil
 }
 
 ////////////////////////////////
 func poolLockState(pool *poolType) (*C.lua_State, int64, error) {
+	pool.Lock()
+	defer pool.Unlock()
 	for i, s := range pool.idle {
 		_, exists := pool.inuse[i]
 		if !exists {
@@ -111,17 +113,22 @@ func poolLockState(pool *poolType) (*C.lua_State, int64, error) {
 
 ////////////////////////////////
 func poolUnlockState(pool *poolType, index int64) {
+	pool.Lock()
+	defer pool.Unlock()
 	delete(pool.inuse, index)
 }
 
 ////////////////////////////////
-func PoolCallFunc(key string, f string, session *DataSessionType) (*DataResultType, error) {
-	if key == "" {
-		return nil, fmt.Errorf("empty key @PoolCallFunc")
+func PoolCallFunc(name string, fn string, session *DataSessionType) (*DataResultType, error) {
+	if name == "" {
+		return nil, fmt.Errorf("empty name @PoolCallFunc")
 	}
-	pool, exists := lRuntime.poolMap[key]
+	pool, exists := lRuntime.poolMap[name]
 	if !exists {
 		return nil, fmt.Errorf("empty pool @PoolCallFunc")
+	}
+	if session == nil {
+		return nil, fmt.Errorf("nil session @PoolCallFunc")
 	}
 	s, index, err := poolLockState(pool)
 	if err != nil {
@@ -130,7 +137,7 @@ func PoolCallFunc(key string, f string, session *DataSessionType) (*DataResultTy
 	defer poolUnlockState(pool, index)
 	stateClean(s, pool.top)
 	stateApplySession(s, session)
-	err = stateCallFunc(s, f, 1)
+	err = stateCallFunc(s, fn, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -139,12 +146,4 @@ func PoolCallFunc(key string, f string, session *DataSessionType) (*DataResultTy
 		return nil, err
 	}
 	return result, nil
-}
-
-////////////////////////////////
-func PoolList() (/*, */error) {
-
-	// ...
-
-	return /*, */nil
 }
