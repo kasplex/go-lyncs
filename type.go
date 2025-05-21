@@ -2,9 +2,7 @@
 ////////////////////////////////
 package lyncs
 
-/*
-#include "lua.h"
-*/
+//#include "lua.h"
 import "C"
 import (
 	"sync"
