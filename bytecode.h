@@ -5,6 +5,8 @@ typedef struct {
 	char *bc;
 	size_t n;
 } bcBuffer;
+
+////////////////////////////////
 static int bcWriter(lua_State *s, const void *bc, size_t n, void *output) {
 	bcBuffer *buffer = (bcBuffer*)output;
 	buffer->bc = (char*)realloc(buffer->bc, buffer->n+n);
@@ -12,6 +14,8 @@ static int bcWriter(lua_State *s, const void *bc, size_t n, void *output) {
 	buffer->n += n;
 	return 0;
 }
+
+////////////////////////////////
 static size_t bcDump(lua_State *s, bcBuffer *output) {
 	output->bc = NULL;
 	output->n = 0;
@@ -22,6 +26,3 @@ static size_t bcDump(lua_State *s, bcBuffer *output) {
 	}
 	return output->n;
 }
-
-//__attribute__((weak))
-// ...

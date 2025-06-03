@@ -24,7 +24,6 @@ type poolType struct {
 	inuse map[int64]*C.lua_State
 	code string
 	bc []byte
-	top C.int
 }
 
 // ...

@@ -42,7 +42,6 @@ func PoolFromCode(name string, code string) (error) {
 	lRuntime.poolMap[name].idle[time.Now().UnixNano()] = s
 	lRuntime.poolMap[name].code = code
 	lRuntime.poolMap[name].bc = bc
-	lRuntime.poolMap[name].top = C.lua_gettop(s)
 	return nil
 }
 
@@ -59,7 +58,6 @@ func PoolFromBC(name string, bc []byte) (error) {
 	}
 	lRuntime.poolMap[name].idle[time.Now().UnixNano()] = s
 	lRuntime.poolMap[name].bc = bc
-	lRuntime.poolMap[name].top = C.lua_gettop(s)
 	return nil
 }
 
@@ -130,7 +128,7 @@ func PoolCallFunc(name string, fn string, session *DataSessionType) (*DataResult
 		return nil, err
 	}
 	defer poolUnlockState(pool, index)
-	stateClean(s, pool.top)
+	stateClean(s)
 	stateApplySession(s, session)
 	err = stateCallFunc(s, fn, 1)
 	if err != nil {

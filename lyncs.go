@@ -3,7 +3,7 @@
 package lyncs
 
 //#cgo CFLAGS: -I/var/luajit2/src
-//#cgo LDFLAGS: -L/var/luajit2/src -lluajit -ldl -lm -static
+//#cgo LDFLAGS: -L/var/luajit2/src -lluajit -ldl -lm -lgmp -static
 import "C"
 import (
 	"fmt"

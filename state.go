@@ -7,7 +7,7 @@ package lyncs
 #include "lua.h"
 #include "lualib.h"
 #include "lauxlib.h"
-#include "./bridge.h"
+#include "bytecode.h"
 */
 import "C"
 import (
@@ -20,7 +20,7 @@ import (
 var stateRemoveMap = map[string][]string{
 	"string": {"dump"},
 	"math": {"randomseed","random"},
-	"_G": {"jit","collectgarbage","rawget","rawset","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv","newproxy","pcall","xpcall"},
+	"_G": {"jit","collectgarbage","rawget","rawset","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv","pcall","xpcall","newproxy"},
 }
 
 var stateReadonlyList = `
@@ -28,6 +28,7 @@ var stateReadonlyList = `
 	string = _set(string)
 	math = _set(math)
 	bit = _set(bit)
+	mpz = _set(mpz)
 `
 
 ////////////////////////////////
@@ -36,7 +37,7 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 	if s == nil {
 		return nil, nil, fmt.Errorf("creation failed @stateFromCode")
 	}
-	codeSandbox, err := stateSandbox(s)
+	codeSandbox, err := stateSandbox(s, false)
 	if err != nil {
 		stateClose(s)
 		return nil, nil, err
@@ -68,7 +69,7 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 	if s == nil {
 		return nil, fmt.Errorf("creation failed @stateFromBC")
 	}
-	_, err := stateSandbox(s)
+	_, err := stateSandbox(s, true)
 	if err != nil {
 		stateClose(s)
 		return nil, err
@@ -86,15 +87,17 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 }
 
 ////////////////////////////////
-func stateSandbox(s *C.lua_State) (string, error) {
+func stateSandbox(s *C.lua_State, byBC bool) (string, error) {
 	var err error
 	C.luaopen_base(s)
-	C.luaopen_math(s)
-	C.luaopen_string(s)
 	C.luaopen_table(s)
-	C.luaopen_bit(s)
-	C.luaopen_jit(s)
+	C.luaopen_string(s)
 	C.luaopen_string_buffer(s)
+	C.luaopen_math(s)
+	C.luaopen_bit(s)
+	C.luaopen_gmp(s, 256)
+	C.luaopen_jit(s)
+	C.lua_settop(s, 0)
 	for k, v := range stateRemoveMap {
 		err = stateSetGlobalTableFieldNil(s, k, v)
 		if err != nil {
@@ -102,12 +105,15 @@ func stateSandbox(s *C.lua_State) (string, error) {
 		}
 	}
 	stateSetGlobalTableFieldString(s, "_G", []string{"_VERSION"}, []string{"Lua 5.1 Lyncs"})
+	if byBC {
+		return "", nil
+	}
 	codeSandbox := ""
 	for t, fn := range lRuntime.cfg.Builtin {
 		stateReadonlyList += "\t" + t + " = _set("+ t +")\r\n"
 		codeSandbox += fn + "\r\n"
 	}
-	codeCallbacks := "local fn = {"
+	codeCallbacks := "\tlocal fn = {"
 	if len(lRuntime.cfg.Callbacks) > 0 {
 		for _, v := range lRuntime.cfg.Callbacks {
 			codeCallbacks += `["`+v+`"]=true,`
@@ -122,30 +128,31 @@ func stateSandbox(s *C.lua_State) (string, error) {
 function setRO()
 ` + codeCallbacks + `
 	local _set = function (t)
+		local _setmt = _G.setmetatable
+		if t==_G then
+			_G.setmetatable = nil
+			_G.getmetatable = nil
+		end
 		local p = {}
 		local mt = {
 			__index = t,
 			__newindex = function(_, k, v)
-				if t ~= _G then
-					error("variable read-only", 2)
-				end
-				if fn[k] and t[k]==nil and type(v)=="function" then
-					t[k] = v
-					return
-				end
+				if t~=_G then error("variable read-only", 2) end
+				if fn[k] and t[k]==nil and type(v)=="function" then t[k] = v; return end
 				error("variable read-only", 2)
 			end
 		}
-		setmetatable(p, mt)
+		_setmt(p, mt)
 		return p
 	end
 ` + codeDebug + `
 ` + stateReadonlyList + `
-	setfenv(2, _set(_G))
-	setfenv = nil
-	setRO = nil
+	_G.setfenv(2, _set(_G))
+	_G.setfenv = nil
+	_G.setRO = nil
 end
-setRO();
+setRO()
+local _;
 `
 	return codeSandbox, nil
 }
@@ -186,8 +193,8 @@ func stateError(s *C.lua_State, caller string) (error) {
 	if len(msgS) < 2 {
 		return fmt.Errorf(msg + " @"+caller)
 	}
-	if len(msgS[1]) > 30 {
-		msgS[1] = msgS[1][:30] + ".."
+	if len(msgS[1]) > 64 {
+		msgS[1] = msgS[1][:64] + ".."
 	}
 	return fmt.Errorf(msgS[1] + " @"+caller)
 }
@@ -198,9 +205,10 @@ func stateClose(s *C.lua_State) {
 }
 
 ////////////////////////////////
-func stateClean(s *C.lua_State, top C.int) {
-	C.lua_settop(s, top)
+func stateClean(s *C.lua_State) {
+	C.lua_settop(s, 0)
 	stateSetGlobalTableFieldNil(s, "_G", []string{"session", "state"})
+	C.lua_gc(s, C.LUA_GCCOLLECT, 0)
 }
 
 ////////////////////////////////
@@ -208,7 +216,8 @@ func stateSetGlobalTableField(s *C.lua_State, table string, field []string, fSet
 	ct := C.CString(table)
 	defer C.free(unsafe.Pointer(ct))
 	C.lua_getfield(s, C.LUA_GLOBALSINDEX, ct)
-	if C.lua_type(s, 1) == C.LUA_TTABLE {
+	defer C.lua_settop(s, C.lua_gettop(s)-1)
+	if C.lua_type(s, 1) != C.LUA_TTABLE {
 		return fmt.Errorf("not a table @stateSetGlobalTableField")
 	}
 	for i, fn := range field {
@@ -218,7 +227,6 @@ func stateSetGlobalTableField(s *C.lua_State, table string, field []string, fSet
 		fSet(s, i)
 		C.lua_settable(s, -3)
 	}
-	C.lua_settop(s, C.lua_gettop(s)-1)
 	return nil
 }
 
