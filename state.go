@@ -104,7 +104,7 @@ func stateSandbox(s *C.lua_State, byBC bool) (string, error) {
 			return "", err
 		}
 	}
-	stateSetGlobalTableFieldString(s, "_G", []string{"_VERSION"}, []string{"Lua 5.1 Lyncs"})
+	stateSetGlobalTableFieldString(s, "_G", []string{"_VERSION"}, []string{"LuaJIT 2.1 Lyncs"})
 	if byBC {
 		return "", nil
 	}
@@ -129,16 +129,13 @@ function setRO()
 ` + codeCallbacks + `
 	local _set = function (t)
 		local _setmt = _G.setmetatable
-		if t==_G then
-			_G.setmetatable = nil
-			_G.getmetatable = nil
-		end
+		if t==_G then _G.setmetatable=nil; _G.getmetatable=nil end
 		local p = {}
 		local mt = {
 			__index = t,
 			__newindex = function(_, k, v)
-				if t~=_G then error("variable read-only", 2) end
-				if fn[k] and t[k]==nil and type(v)=="function" then t[k] = v; return end
+				if t~=_G then error("variable read-only",2) end
+				if fn[k] and t[k]==nil and type(v)=="function" then t[k]=v; return end
 				error("variable read-only", 2)
 			end
 		}
@@ -193,8 +190,8 @@ func stateError(s *C.lua_State, caller string) (error) {
 	if len(msgS) < 2 {
 		return fmt.Errorf(msg + " @"+caller)
 	}
-	if len(msgS[1]) > 64 {
-		msgS[1] = msgS[1][:64] + ".."
+	if len(msgS[1]) > 30 {
+		msgS[1] = msgS[1][:30] + ".."
 	}
 	return fmt.Errorf(msgS[1] + " @"+caller)
 }
