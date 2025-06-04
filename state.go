@@ -14,7 +14,11 @@ import (
 	"fmt"
 	"unsafe"
 	"strings"
+    _ "embed"
 )
+
+//go:embed sandbox.lua
+var luaSandbox string
 
 ////////////////////////////////
 var stateRemoveMap = map[string][]string{
@@ -22,14 +26,6 @@ var stateRemoveMap = map[string][]string{
 	"math": {"randomseed","random"},
 	"_G": {"jit","collectgarbage","rawget","rawset","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv","pcall","xpcall","newproxy"},
 }
-
-var stateReadonlyList = `
-	table = _set(table)
-	string = _set(string)
-	math = _set(math)
-	bit = _set(bit)
-	mpz = _set(mpz)
-`
 
 ////////////////////////////////
 func stateFromCode(code string) (*C.lua_State, []byte, error) {
@@ -108,11 +104,6 @@ func stateSandbox(s *C.lua_State, byBC bool) (string, error) {
 	if byBC {
 		return "", nil
 	}
-	codeSandbox := ""
-	for t, fn := range lRuntime.cfg.Builtin {
-		stateReadonlyList += "\t" + t + " = _set("+ t +")\r\n"
-		codeSandbox += fn + "\r\n"
-	}
 	codeCallbacks := "\tlocal fn = {"
 	if len(lRuntime.cfg.Callbacks) > 0 {
 		for _, v := range lRuntime.cfg.Callbacks {
@@ -120,37 +111,20 @@ func stateSandbox(s *C.lua_State, byBC bool) (string, error) {
 		}
 	}
 	codeCallbacks += "}"
-	codeDebug := "\tprint = function(...) end;"
+	codeDebug := "\tprint = function(...) end"
 	if lRuntime.cfg.Debug {
 		codeDebug = ""
 	}
-	codeSandbox += `
-function setRO()
-` + codeCallbacks + `
-	local _set = function (t)
-		local _setmt = _G.setmetatable
-		if t==_G then _G.setmetatable=nil; _G.getmetatable=nil end
-		local p = {}
-		local mt = {
-			__index = t,
-			__newindex = function(_, k, v)
-				if t~=_G then error("variable read-only",2) end
-				if fn[k] and t[k]==nil and type(v)=="function" then t[k]=v; return end
-				error("variable read-only", 2)
-			end
-		}
-		_setmt(p, mt)
-		return p
-	end
-` + codeDebug + `
-` + stateReadonlyList + `
-	_G.setfenv(2, _set(_G))
-	_G.setfenv = nil
-	_G.setRO = nil
-end
-setRO()
-local _;
-`
+	codeSandbox := ""
+	stateReadonlyList := ""
+	for t, fn := range lRuntime.cfg.Builtin {
+		stateReadonlyList += "\t" + t + " = _set("+ t +")\r\n"
+		codeSandbox += fn + "\r\n"
+	}
+	codeSandbox += luaSandbox
+	codeSandbox = strings.Replace(codeSandbox, "--[[-code-callbacks-]]", codeCallbacks, 1)
+	codeSandbox = strings.Replace(codeSandbox, "--[[-code-readonly-list-]]", stateReadonlyList, 1)
+	codeSandbox = strings.Replace(codeSandbox, "--[[-code-debug-]]", codeDebug, 1)
 	return codeSandbox, nil
 }
 
