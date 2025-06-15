@@ -55,7 +55,7 @@ func CodeVerify(code string) ([]byte, error) {
 }
 
 ////////////////////////////////
-func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[string]string, fCallBefore func(*DataCallFuncType), fCallAfter func(*DataCallFuncType, *DataResultType, error)) ([]*DataResultType) {
+func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[string]string, fCallBefore func(*DataCallFuncType), fCallAfter func(*DataCallFuncType, int, *DataResultType, error) (*DataResultType)) ([]*DataResultType) {
 	lenCall := len(callList)
 	result := make([]*DataResultType, lenCall)
 	iCall := 0
@@ -125,12 +125,10 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 						fCallBefore(&callList[j])
 					}
 					r, err := PoolCallFunc(callList[j].Name, callList[j].Fn, callList[j].Session)
-					if fCallAfter != nil {
-						fCallAfter(&callList[j], r, err)
-					}
 					if r != nil && len(r.State) > 0 {
 						for key, rw := range callList[j].KeyRules {
 							if rw != "w" {
+								delete(r.State, key)
 								continue
 							}
 							s, exists := r.State[key]
@@ -139,11 +137,15 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 							}
 							if len(s) == 0 {
 								s = nil
+								r.State[key] = nil
 							}
 							mutex.Lock()
 							stateMap[key] = s
 							mutex.Unlock()
 						}
+					}
+					if fCallAfter != nil {
+						r = fCallAfter(&callList[j], j, r, err)
 					}
 					result[j] = r
 				}

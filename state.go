@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"unsafe"
 	"strings"
-    _ "embed"
+	_ "embed"
 )
 
 //go:embed sandbox.lua
@@ -274,7 +274,7 @@ func stateApplySession(s *C.lua_State, session *DataSessionType) {
 	stateSetTableByMap1(s, session.Block, 0, "block")
 	stateSetTableByMap1(s, session.Tx, 0, "tx")
 	stateSetTableByMap1(s, session.Op, 0, "op")
-	stateSetTableByMap1(s, session.OpScript, 0, "opScript")
+	stateSetTableByMap1(s, session.OpParams, 0, "opParams")
 	stateSetTableByMap1(s, session.ExData, 0, "exData")
 	stateSetTableByMapList(s, session.TxInputs, "txInputs")
 	stateSetTableByMapList(s, session.TxOutputs, "txOutputs")
@@ -364,8 +364,8 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 		key = C.GoString(C.lua_tolstring(s, -2, nil))
 		if key == "op" {
 			result.Op = stateGetTableMap1(s, 8)
-		} else if key == "opScript" {
-			result.OpScript = stateGetTableMap1(s, 16)
+		} else if key == "opParams" {
+			result.OpParams = stateGetTableMap1(s, 16)
 		} else if key == "opRules" {
 			result.OpRules = stateGetTableMap1(s, 16)
 		} else if key == "exData" {

@@ -42,7 +42,7 @@ type DataSessionType struct {
 	TxInputs []map[string]string
 	TxOutputs []map[string]string
 	Op map[string]string
-	OpScript map[string]string
+	OpParams map[string]string
 	State map[string]map[string]string
 	// ...
 	ExData map[string]string
@@ -50,8 +50,8 @@ type DataSessionType struct {
 
 ////////////////////////////////
 type DataResultType struct {
-	Op map[string]string  // accept|error|feeLeast|isRecycle
-	OpScript map[string]string
+	Op map[string]string
+	OpParams map[string]string
 	OpRules map[string]string
 	KeyRules map[string]string
 	State map[string]map[string]string
