@@ -41,8 +41,9 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 	cCode := C.CString(codeSandbox + code)
 	defer C.free(unsafe.Pointer(cCode))
 	if C.LUA_OK != C.luaL_loadstring(s, cCode) {
+		err = stateError(s, "stateFromCode")
 		stateClose(s)
-		return nil, nil, fmt.Errorf("load failed @stateFromCode")
+		return nil, nil, err
 	}
 	var bc []byte
 	var buffer C.bcBuffer
