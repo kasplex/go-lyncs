@@ -26,13 +26,10 @@ type poolType struct {
 	bc []byte
 }
 
-// ...
-
 ////////////////////////////////
 type runtimeType struct {
 	cfg *ConfigType
 	poolMap map[string]*poolType
-	// ...
 }
 
 ////////////////////////////////
@@ -44,7 +41,6 @@ type DataSessionType struct {
 	Op map[string]string
 	OpParams map[string]string
 	State map[string]map[string]string
-	// ...
 	ExData map[string]string
 }
 
@@ -54,8 +50,7 @@ type DataResultType struct {
 	OpParams map[string]string
 	OpRules map[string]string
 	KeyRules map[string]string
-	State map[string]map[string]string
-	// ...
+	State []map[string]string
 	ExData map[string]string
 }
 
@@ -72,5 +67,3 @@ type dataCallSlotType struct {
 	list []int
 	keyRules map[string]string
 }
-
-// ...

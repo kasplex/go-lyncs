@@ -55,7 +55,7 @@ func CodeVerify(code string) ([]byte, error) {
 }
 
 ////////////////////////////////
-func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[string]string, fCallBefore func(*DataCallFuncType), fCallAfter func(*DataCallFuncType, int, *DataResultType, error) (*DataResultType)) ([]*DataResultType) {
+func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[string]string, mutex *sync.RWMutex, fCallBefore func(*DataCallFuncType), fCallAfter func(*DataCallFuncType, int, *DataResultType, error) (*DataResultType)) ([]*DataResultType) {
 	lenCall := len(callList)
 	result := make([]*DataResultType, lenCall)
 	iCall := 0
@@ -110,7 +110,9 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 			}
 			iCall = i + 1
 		}
-		var mutex sync.RWMutex
+		if mutex == nil {
+			mutex = &sync.RWMutex{}
+		}
 		wg := &sync.WaitGroup{}
 		for i, _ := range slots {
 			wg.Add(1)
@@ -126,26 +128,33 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 					}
 					r, err := PoolCallFunc(callList[j].Name, callList[j].Fn, callList[j].Session)
 					if r != nil && len(r.State) > 0 {
-						for key, rw := range callList[j].KeyRules {
-							if rw != "w" {
-								delete(r.State, key)
+						for k, s := range r.State {
+							if s["_key"] == "" || callList[j].KeyRules[s["_key"]] != "w" {
+								r.State[k] = nil
 								continue
 							}
-							s, exists := r.State[key]
-							if !exists {
-								continue
-							}
-							if len(s) == 0 {
-								s = nil
-								r.State[key] = nil
-							}
-							mutex.Lock()
-							stateMap[key] = s
-							mutex.Unlock()
 						}
+					}
+					if r == nil && err == nil {
+						err = fmt.Errorf("nil result")
 					}
 					if fCallAfter != nil {
 						r = fCallAfter(&callList[j], j, r, err)
+					}
+					for _, s := range r.State {
+						if s == nil {
+							continue
+						}
+						if len(s) == 1 {
+							mutex.Lock()
+							stateMap[s["_key"]] = nil
+							mutex.Unlock()
+							continue
+						}
+						mutex.Lock()
+						stateMap[s["_key"]] = s
+						delete(stateMap[s["_key"]], "_key")
+						mutex.Unlock()
 					}
 					result[j] = r
 				}

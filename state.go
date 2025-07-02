@@ -306,9 +306,6 @@ func stateGetDataToList(s *C.lua_State, r *[]string) {
 
 ////////////////////////////////
 func stateGetTableData(s *C.lua_State, fn func()) {
-	if C.lua_type(s, -1) != C.LUA_TTABLE {
-		return
-	}
 	C.lua_pushnil(s)
 	for C.lua_next(s, -2) != 0 {
 		fn()
@@ -329,20 +326,18 @@ func stateGetTableMap1(s *C.lua_State, size int) (map[string]string) {
 }
 
 ////////////////////////////////
-func stateGetTableMap2(s *C.lua_State, size1 int, size2 int) (map[string]map[string]string) {
+func stateGetTableMapList(s *C.lua_State, size1 int, size2 int) ([]map[string]string) {
 	if C.lua_type(s, -1) != C.LUA_TTABLE {
 		return nil
 	}
-	result := make(map[string]map[string]string, size1)
-	key := ""
+	result := make([]map[string]string, 0, size1)
 	stateGetTableData(s, func() {
-		if C.lua_type(s, -2) == C.LUA_TSTRING && C.lua_type(s, -1) == C.LUA_TTABLE {
-			key = C.GoString(C.lua_tolstring(s, -2, nil))
+		if C.lua_type(s, -2) == C.LUA_TNUMBER && C.lua_type(s, -1) == C.LUA_TTABLE {
 			data := make(map[string]string, size2)
 			stateGetTableData(s, func() {
 				stateGetDataToMap(s, &data)
-				result[key] = data
 			})
+			result = append(result, data)
 		}
 	})
 	return result
@@ -374,7 +369,7 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 		} else if key == "keyRules" {
 			result.KeyRules = stateGetTableMap1(s, 16)
 		} else if key == "state" {
-			result.State = stateGetTableMap2(s, 16, 8)
+			result.State = stateGetTableMapList(s, 16, 8)
 		}
 		C.lua_settop(s, C.lua_gettop(s)-1)
 	}
