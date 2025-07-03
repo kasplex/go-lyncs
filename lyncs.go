@@ -141,6 +141,10 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 					if fCallAfter != nil {
 						r = fCallAfter(&callList[j], j, r, err)
 					}
+					result[j] = r
+					if r == nil {
+						continue
+					}
 					for _, s := range r.State {
 						if s == nil {
 							continue
@@ -156,7 +160,6 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 						delete(stateMap[s["_key"]], "_key")
 						mutex.Unlock()
 					}
-					result[j] = r
 				}
 				wg.Done()
 			}()
