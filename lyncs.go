@@ -118,6 +118,9 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 			wg.Add(1)
 			go func() {
 				for _, j := range slots[i].list {
+					if callList[j].Session.State == nil {
+						callList[j].Session.State = make(map[string]map[string]string, len(callList[j].KeyRules))
+					}
 					mutex.RLock()
 					for key, _ := range callList[j].KeyRules {
 						callList[j].Session.State[key] = stateMap[key]
