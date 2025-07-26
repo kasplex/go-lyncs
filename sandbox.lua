@@ -7,7 +7,6 @@
 			setmetatable=nil
 			getmetatable=nil
 		end
-		local proxy = {}
 		local mt = {
 			__index=t,
 			__newindex=function(_, k, v)
@@ -17,7 +16,7 @@
 				error("variable read-only "..k, 2)
 			end
 		}
-		return _setmt(proxy, mt)
+		return _setmt({}, mt)
 	end
 	table = _set(table)
 	string = _set(string)
