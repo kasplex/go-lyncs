@@ -21,10 +21,13 @@ import (
 var luaSandbox string
 
 ////////////////////////////////
+var bcSandbox []byte
+
+////////////////////////////////
 var stateRemoveMap = map[string][]string{
 	"string": {"dump"},
 	"math": {"randomseed","random"},
-	"_G": {"jit","collectgarbage","rawget","rawset","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv","pcall","xpcall","newproxy"},
+	"_G": {"jit","collectgarbage","rawget","rawset","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv","setfenv","pcall","xpcall","newproxy"},
 }
 
 ////////////////////////////////
@@ -33,12 +36,12 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 	if s == nil {
 		return nil, nil, fmt.Errorf("creation failed @stateFromCode")
 	}
-	codeSandbox, err := stateSandbox(s, false)
+	err := stateSandbox(s)
 	if err != nil {
 		stateClose(s)
 		return nil, nil, err
 	}
-	cCode := C.CString(codeSandbox + code)
+	cCode := C.CString(code)
 	defer C.free(unsafe.Pointer(cCode))
 	if C.LUA_OK != C.luaL_loadstring(s, cCode) {
 		err = stateError(s, "stateFromCode")
@@ -47,12 +50,12 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 	}
 	var bc []byte
 	var buffer C.bcBuffer
-	n := C.bcDump(s, &buffer)
+	n := C.luaL_bcDump(s, &buffer)
 	if n > 0 {
 		bc = C.GoBytes(unsafe.Pointer(buffer.bc), C.int(n))
 		defer C.free(unsafe.Pointer(buffer.bc))
 	}
-	err = stateCall(s, 0)
+	err = stateCall(s, 0, true)
 	if err != nil {
 		stateClose(s)
 		return nil, nil, err
@@ -66,7 +69,7 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 	if s == nil {
 		return nil, fmt.Errorf("creation failed @stateFromBC")
 	}
-	_, err := stateSandbox(s, true)
+	err := stateSandbox(s)
 	if err != nil {
 		stateClose(s)
 		return nil, err
@@ -75,7 +78,7 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 		stateClose(s)
 		return nil, fmt.Errorf("load failed @stateFromBC")
 	}
-	err = stateCall(s, 0)
+	err = stateCall(s, 0, true)
 	if err != nil {
 		stateClose(s)
 		return nil, err
@@ -84,7 +87,7 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 }
 
 ////////////////////////////////
-func stateSandbox(s *C.lua_State, byBC bool) (string, error) {
+func stateSandbox(s *C.lua_State) (error) {
 	var err error
 	C.luaopen_base(s)
 	C.luaopen_table(s)
@@ -98,39 +101,61 @@ func stateSandbox(s *C.lua_State, byBC bool) (string, error) {
 	for k, v := range stateRemoveMap {
 		err = stateSetGlobalTableFieldNil(s, k, v)
 		if err != nil {
-			return "", err
+			return err
 		}
 	}
 	stateSetGlobalTableFieldString(s, "_G", []string{"_VERSION"}, []string{"LuaJIT 2.1 Lyncs"})
-	if byBC {
-		return "", nil
-	}
-	codeCallbacks := "\tlocal fn = {"
-	if len(lRuntime.cfg.Callbacks) > 0 {
-		for _, v := range lRuntime.cfg.Callbacks {
-			codeCallbacks += `["`+v+`"]=true,`
+	if bcSandbox != nil {
+		if C.LUA_OK != C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(&bcSandbox[0])), C.size_t(len(bcSandbox)), (*C.char)(unsafe.Pointer(nil))) {
+			return fmt.Errorf("load failed @stateSandbox")
+		}
+	} else {
+		codeCallbacks := "\tlocal fn = {"
+		if len(lRuntime.cfg.Callbacks) > 0 {
+			for _, v := range lRuntime.cfg.Callbacks {
+				codeCallbacks += `["`+v+`"]=true,`
+			}
+		}
+		codeCallbacks += "}"
+		codeDebug := "\tprint = function(...) end"
+		if lRuntime.cfg.Debug {
+			codeDebug = ""
+		}
+		codeSandbox := ""
+		stateReadonlyList := ""
+		for t, fn := range lRuntime.cfg.Builtin {
+			stateReadonlyList += "\t" + t + " = _set("+ t +")\r\n"
+			codeSandbox += fn + "\r\n"
+		}
+		codeSandbox += luaSandbox
+		codeSandbox = strings.Replace(codeSandbox, "--[[-code-callbacks-]]", codeCallbacks, 1)
+		codeSandbox = strings.Replace(codeSandbox, "--[[-code-readonly-list-]]", stateReadonlyList, 1)
+		codeSandbox = strings.Replace(codeSandbox, "--[[-code-debug-]]", codeDebug, 1)
+		cSandbox := C.CString(codeSandbox)
+		defer C.free(unsafe.Pointer(cSandbox))
+		if C.LUA_OK != C.luaL_loadstring(s, cSandbox) {
+			return stateError(s, "stateSandbox")
+		}
+		var buffer C.bcBuffer
+		n := C.luaL_bcDump(s, &buffer)
+		if n > 0 {
+			bcSandbox = C.GoBytes(unsafe.Pointer(buffer.bc), C.int(n))
+			defer C.free(unsafe.Pointer(buffer.bc))
+		} else {
+			return fmt.Errorf("bytecode failed @stateSandbox")
 		}
 	}
-	codeCallbacks += "}"
-	codeDebug := "\tprint = function(...) end"
-	if lRuntime.cfg.Debug {
-		codeDebug = ""
-	}
-	codeSandbox := ""
-	stateReadonlyList := ""
-	for t, fn := range lRuntime.cfg.Builtin {
-		stateReadonlyList += "\t" + t + " = _set("+ t +")\r\n"
-		codeSandbox += fn + "\r\n"
-	}
-	codeSandbox += luaSandbox
-	codeSandbox = strings.Replace(codeSandbox, "--[[-code-callbacks-]]", codeCallbacks, 1)
-	codeSandbox = strings.Replace(codeSandbox, "--[[-code-readonly-list-]]", stateReadonlyList, 1)
-	codeSandbox = strings.Replace(codeSandbox, "--[[-code-debug-]]", codeDebug, 1)
-	return codeSandbox, nil
+	return stateCall(s, 0, false)
 }
 
 ////////////////////////////////
-func stateCall(s *C.lua_State, nResult C.int) (error) {
+func stateCall(s *C.lua_State, nResult C.int, setEnv bool) (error) {
+	if setEnv {
+		cEnv := C.CString("_G")
+		defer C.free(unsafe.Pointer(cEnv))
+		C.lua_getfield(s, C.LUA_GLOBALSINDEX, cEnv)
+		C.lua_setfenv(s, -2)
+	}
 	if C.LUA_OK != C.lua_pcall(s, 0, nResult, 0) {
 		return stateError(s, "stateCall")
 	}
@@ -142,7 +167,7 @@ func stateCallFunc(s *C.lua_State, fn string, nResult C.int) (error) {
 	cFunc := C.CString(fn)
 	defer C.free(unsafe.Pointer(cFunc))
 	C.lua_getfield(s, C.LUA_GLOBALSINDEX, cFunc)
-	return stateCall(s, nResult)
+	return stateCall(s, nResult, false)
 }
 
 ////////////////////////////////
@@ -375,5 +400,3 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 	}
 	return result, nil
 }
-
-// ...
