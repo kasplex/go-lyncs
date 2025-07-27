@@ -32,13 +32,8 @@ var stateRemoveMap = map[string][]string{
 
 ////////////////////////////////
 func stateFromCode(code string) (*C.lua_State, []byte, error) {
-	s := C.luaL_newstate()
-	if s == nil {
-		return nil, nil, fmt.Errorf("creation failed @stateFromCode")
-	}
-	err := stateSandbox(s)
+	s, err := stateSandbox()
 	if err != nil {
-		stateClose(s)
 		return nil, nil, err
 	}
 	cCode := C.CString(code)
@@ -55,7 +50,8 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 		bc = C.GoBytes(unsafe.Pointer(buffer.bc), C.int(n))
 		defer C.free(unsafe.Pointer(buffer.bc))
 	}
-	err = stateCall(s, 0, true)
+	stateEnvG(s)
+	err = stateCall(s, 0)
 	if err != nil {
 		stateClose(s)
 		return nil, nil, err
@@ -65,20 +61,16 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 
 ////////////////////////////////
 func stateFromBC(bc []byte) (*C.lua_State, error) {
-	s := C.luaL_newstate()
-	if s == nil {
-		return nil, fmt.Errorf("creation failed @stateFromBC")
-	}
-	err := stateSandbox(s)
+	s, err := stateSandbox()
 	if err != nil {
-		stateClose(s)
 		return nil, err
 	}
 	if C.LUA_OK != C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(&bc[0])), C.size_t(len(bc)), (*C.char)(unsafe.Pointer(nil))) {
 		stateClose(s)
 		return nil, fmt.Errorf("load failed @stateFromBC")
 	}
-	err = stateCall(s, 0, true)
+	stateEnvG(s)
+	err = stateCall(s, 0)
 	if err != nil {
 		stateClose(s)
 		return nil, err
@@ -87,7 +79,11 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 }
 
 ////////////////////////////////
-func stateSandbox(s *C.lua_State) (error) {
+func stateSandbox() (*C.lua_State, error) {
+	s := C.luaL_newstate()
+	if s == nil {
+		return nil, fmt.Errorf("creation failed @stateSandbox")
+	}
 	var err error
 	C.luaopen_base(s)
 	C.luaopen_table(s)
@@ -101,13 +97,15 @@ func stateSandbox(s *C.lua_State) (error) {
 	for k, v := range stateRemoveMap {
 		err = stateSetGlobalTableFieldNil(s, k, v)
 		if err != nil {
-			return err
+			stateClose(s)
+			return nil, err
 		}
 	}
 	stateSetGlobalTableFieldString(s, "_G", []string{"_VERSION"}, []string{"LuaJIT 2.1 Lyncs"})
 	if bcSandbox != nil {
 		if C.LUA_OK != C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(&bcSandbox[0])), C.size_t(len(bcSandbox)), (*C.char)(unsafe.Pointer(nil))) {
-			return fmt.Errorf("load failed @stateSandbox")
+			stateClose(s)
+			return nil, fmt.Errorf("load failed @stateSandbox")
 		}
 	} else {
 		codeCallbacks := "\tlocal fn = {"
@@ -134,7 +132,9 @@ func stateSandbox(s *C.lua_State) (error) {
 		cSandbox := C.CString(codeSandbox)
 		defer C.free(unsafe.Pointer(cSandbox))
 		if C.LUA_OK != C.luaL_loadstring(s, cSandbox) {
-			return stateError(s, "stateSandbox")
+			err = stateError(s, "stateSandbox")
+			stateClose(s)
+			return nil, err
 		}
 		var buffer C.bcBuffer
 		n := C.luaL_bcDump(s, &buffer)
@@ -142,20 +142,28 @@ func stateSandbox(s *C.lua_State) (error) {
 			bcSandbox = C.GoBytes(unsafe.Pointer(buffer.bc), C.int(n))
 			defer C.free(unsafe.Pointer(buffer.bc))
 		} else {
-			return fmt.Errorf("bytecode failed @stateSandbox")
+			stateClose(s)
+			return nil, fmt.Errorf("bytecode failed @stateSandbox")
 		}
 	}
-	return stateCall(s, 0, false)
+	err = stateCall(s, 0)
+	if err != nil {
+		stateClose(s)
+		return nil, err
+	}
+	return s, nil
 }
 
 ////////////////////////////////
-func stateCall(s *C.lua_State, nResult C.int, setEnv bool) (error) {
-	if setEnv {
-		cEnv := C.CString("_G")
-		defer C.free(unsafe.Pointer(cEnv))
-		C.lua_getfield(s, C.LUA_GLOBALSINDEX, cEnv)
-		C.lua_setfenv(s, -2)
-	}
+func stateEnvG(s *C.lua_State) {
+	cEnv := C.CString("_G")
+	defer C.free(unsafe.Pointer(cEnv))
+	C.lua_getfield(s, C.LUA_GLOBALSINDEX, cEnv)
+	C.lua_setfenv(s, -2)
+}
+
+////////////////////////////////
+func stateCall(s *C.lua_State, nResult C.int) (error) {
 	if C.LUA_OK != C.lua_pcall(s, 0, nResult, 0) {
 		return stateError(s, "stateCall")
 	}
@@ -167,7 +175,7 @@ func stateCallFunc(s *C.lua_State, fn string, nResult C.int) (error) {
 	cFunc := C.CString(fn)
 	defer C.free(unsafe.Pointer(cFunc))
 	C.lua_getfield(s, C.LUA_GLOBALSINDEX, cFunc)
-	return stateCall(s, nResult, false)
+	return stateCall(s, nResult)
 }
 
 ////////////////////////////////
