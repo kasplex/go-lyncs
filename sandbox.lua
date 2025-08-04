@@ -1,12 +1,8 @@
 (function()
 --[[-code-callbacks-]]
 	local _G_RAW = _G
+	local _setmt = setmetatable
 	local _set = function (t)
-		local _setmt=setmetatable
-		if t==_G_RAW then
-			setmetatable=nil
-			getmetatable=nil
-		end
 		local mt = {
 			__index=t,
 			__newindex=function(_, k, v)
@@ -18,9 +14,10 @@
 		}
 		return _setmt({}, mt)
 	end
+	setmetatable=nil
 	table = _set(table)
 	string = _set(string)
-	math = _set(math)
+	math = _set({abs=math.abs,min=math.min,max=math.max})
 	bit = _set(bit)
 	mpz = _set(mpz)
 --[[-code-readonly-list-]]

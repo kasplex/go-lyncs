@@ -27,7 +27,8 @@ var bcSandbox []byte
 var stateRemoveMap = map[string][]string{
 	"string": {"dump"},
 	"math": {"randomseed","random"},
-	"_G": {"jit","collectgarbage","rawget","rawset","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv","setfenv","pcall","xpcall","newproxy"},
+	"table": {"foreachi","foreach","getn","move","insert","remove"},
+	"_G": {"jit","collectgarbage","rawget","rawset","rawequal","loadfile","load","loadstring","dofile","gcinfo","coroutine","debug","getfenv","setfenv","pcall","xpcall","newproxy","getmetatable"},
 }
 
 ////////////////////////////////
