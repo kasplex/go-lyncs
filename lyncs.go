@@ -2,7 +2,7 @@
 ////////////////////////////////
 package lyncs
 
-//#cgo CFLAGS: -I${SRCDIR}/luajit2/src
+//#cgo CFLAGS: -I${SRCDIR}/luajit2/include
 //#cgo LDFLAGS: -L${SRCDIR}/luajit2 -lluajit -ldl -lm -lgmp -static
 import "C"
 import (
