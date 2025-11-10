@@ -93,6 +93,7 @@ func stateSandbox() (*C.lua_State, error) {
 	C.luaopen_math(s)
 	C.luaopen_bit(s)
 	C.luaopen_gmp(s, 256)
+	C.luaopen_crypt(s)
 	C.luaopen_jit(s)
 	C.lua_settop(s, 0)
 	for k, v := range stateRemoveMap {
