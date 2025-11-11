@@ -200,8 +200,8 @@ func stateError(s *C.lua_State, caller string) (error) {
 	if len(msgS) < 2 {
 		return fmt.Errorf(msg + " @"+caller)
 	}
-	if len(msgS[1]) > 30 {
-		msgS[1] = msgS[1][:30] + ".."
+	if len(msgS[1]) > 40 {
+		msgS[1] = msgS[1][:40] + ".."
 	}
 	return fmt.Errorf(msgS[1] + " @"+caller)
 }
