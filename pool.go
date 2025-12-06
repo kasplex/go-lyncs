@@ -14,17 +14,21 @@ func poolInit(name string) (error) {
 	if name == "" {
 		return fmt.Errorf("empty name @poolInit")
 	}
+    lRuntime.Lock()
 	_, exists := lRuntime.poolMap[name]
+	lRuntime.Unlock()
 	if exists {
 		err := PoolDestroy(name)
 		if err != nil {
 			return err
 		}
 	}
+    lRuntime.Lock()
 	lRuntime.poolMap[name] = &poolType{
 		idle: make(map[int64]*C.lua_State, lRuntime.cfg.NumWorkers),
 		inuse: make(map[int64]*C.lua_State, lRuntime.cfg.NumWorkers),
 	}
+    lRuntime.Unlock()
 	return nil
 }
 
@@ -39,9 +43,11 @@ func PoolFromCode(name string, code string) (error) {
 		PoolDestroy(name)
 		return err
 	}
+	lRuntime.Lock()
 	lRuntime.poolMap[name].idle[time.Now().UnixNano()] = s
 	lRuntime.poolMap[name].code = code
 	lRuntime.poolMap[name].bc = bc
+	lRuntime.Unlock()
 	return nil
 }
 
@@ -56,13 +62,17 @@ func PoolFromBC(name string, bc []byte) (error) {
 		PoolDestroy(name)
 		return err
 	}
+	lRuntime.Lock()
 	lRuntime.poolMap[name].idle[time.Now().UnixNano()] = s
 	lRuntime.poolMap[name].bc = bc
+	lRuntime.Unlock()
 	return nil
 }
 
 ////////////////////////////////
 func PoolDestroy(name string) (error) {
+	lRuntime.Lock()
+	defer lRuntime.Unlock()
 	pool, exists := lRuntime.poolMap[name]
 	if !exists {
 		return nil
@@ -116,7 +126,9 @@ func PoolCallFunc(name string, fn string, session *DataSessionType) (*DataResult
 	if name == "" {
 		return nil, fmt.Errorf("empty name @PoolCallFunc")
 	}
+	lRuntime.Lock()
 	pool, exists := lRuntime.poolMap[name]
+	lRuntime.Unlock()
 	if !exists {
 		return nil, fmt.Errorf("empty pool @PoolCallFunc")
 	}

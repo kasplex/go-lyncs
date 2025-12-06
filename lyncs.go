@@ -116,7 +116,7 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 		wg := &sync.WaitGroup{}
 		for i, _ := range slots {
 			wg.Add(1)
-			go func() {
+			go func(i int) {
 				for _, j := range slots[i].list {
 					if callList[j].Session.State == nil {
 						callList[j].Session.State = make(map[string]map[string]string, len(callList[j].KeyRules))
@@ -165,7 +165,7 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 					}
 				}
 				wg.Done()
-			}()
+			}(i)
 		}
 		wg.Wait()
 	}

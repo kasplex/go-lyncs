@@ -28,6 +28,7 @@ type poolType struct {
 
 ////////////////////////////////
 type runtimeType struct {
+	sync.Mutex
 	cfg *ConfigType
 	poolMap map[string]*poolType
 }
