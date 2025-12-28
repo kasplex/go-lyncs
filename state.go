@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"unsafe"
 	"strings"
+	"runtime"
 	_ "embed"
 )
 
@@ -33,23 +34,27 @@ var stateRemoveMap = map[string][]string{
 
 ////////////////////////////////
 func stateFromCode(code string) (*C.lua_State, []byte, error) {
+    lenCode := len(code)
+    if lenCode == 0 {
+        return nil, nil, fmt.Errorf("empty code @stateFromCode")
+    }
 	s, err := stateSandbox()
 	if err != nil {
 		return nil, nil, err
 	}
-	cCode := C.CString(code)
-	defer C.free(unsafe.Pointer(cCode))
-	if C.LUA_OK != C.luaL_loadstring(s, cCode) {
+    r := C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(unsafe.StringData(code))), C.size_t(lenCode), nil)
+    runtime.KeepAlive(code)
+    if r != C.LUA_OK {
 		err = stateError(s, "stateFromCode")
 		stateClose(s)
 		return nil, nil, err
-	}
+    }
 	var bc []byte
 	var buffer C.bcBuffer
 	n := C.luaL_bcDump(s, &buffer)
 	if n > 0 {
 		bc = C.GoBytes(unsafe.Pointer(buffer.bc), C.int(n))
-		defer C.free(unsafe.Pointer(buffer.bc))
+		C.free(unsafe.Pointer(buffer.bc))
 	}
 	stateEnvG(s)
 	err = stateCall(s, 0)
@@ -62,11 +67,17 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 
 ////////////////////////////////
 func stateFromBC(bc []byte) (*C.lua_State, error) {
+    lenBC := len(bc)
+    if lenBC == 0 {
+        return nil, fmt.Errorf("nil bytecode @stateFromBC")
+    }
 	s, err := stateSandbox()
 	if err != nil {
 		return nil, err
 	}
-	if C.LUA_OK != C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(&bc[0])), C.size_t(len(bc)), (*C.char)(unsafe.Pointer(nil))) {
+	r := C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(&bc[0])), C.size_t(lenBC), nil)
+    runtime.KeepAlive(bc)
+    if r != C.LUA_OK {
 		stateClose(s)
 		return nil, fmt.Errorf("load failed @stateFromBC")
 	}
@@ -104,8 +115,8 @@ func stateSandbox() (*C.lua_State, error) {
 		}
 	}
 	stateSetGlobalTableFieldString(s, "_G", []string{"_VERSION"}, []string{"LuaJIT 2.1 Lyncs"})
-	if bcSandbox != nil {
-		if C.LUA_OK != C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(&bcSandbox[0])), C.size_t(len(bcSandbox)), (*C.char)(unsafe.Pointer(nil))) {
+	if len(bcSandbox) > 0 {
+		if C.LUA_OK != C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(&bcSandbox[0])), C.size_t(len(bcSandbox)), nil) {
 			stateClose(s)
 			return nil, fmt.Errorf("load failed @stateSandbox")
 		}
@@ -131,18 +142,18 @@ func stateSandbox() (*C.lua_State, error) {
 		codeSandbox = strings.Replace(codeSandbox, "--[[-code-callbacks-]]", codeCallbacks, 1)
 		codeSandbox = strings.Replace(codeSandbox, "--[[-code-readonly-list-]]", stateReadonlyList, 1)
 		codeSandbox = strings.Replace(codeSandbox, "--[[-code-debug-]]", codeDebug, 1)
-		cSandbox := C.CString(codeSandbox)
-		defer C.free(unsafe.Pointer(cSandbox))
-		if C.LUA_OK != C.luaL_loadstring(s, cSandbox) {
+        r := C.luaL_loadbuffer(s, (*C.char)(unsafe.Pointer(unsafe.StringData(codeSandbox))), C.size_t(len(codeSandbox)), nil)
+        runtime.KeepAlive(codeSandbox)
+        if r != C.LUA_OK {
 			err = stateError(s, "stateSandbox")
 			stateClose(s)
 			return nil, err
-		}
+        }
 		var buffer C.bcBuffer
 		n := C.luaL_bcDump(s, &buffer)
 		if n > 0 {
 			bcSandbox = C.GoBytes(unsafe.Pointer(buffer.bc), C.int(n))
-			defer C.free(unsafe.Pointer(buffer.bc))
+			C.free(unsafe.Pointer(buffer.bc))
 		} else {
 			stateClose(s)
 			return nil, fmt.Errorf("bytecode failed @stateSandbox")
@@ -224,13 +235,12 @@ func stateSetGlobalTableField(s *C.lua_State, table string, field []string, fSet
 	defer C.free(unsafe.Pointer(ct))
 	C.lua_getfield(s, C.LUA_GLOBALSINDEX, ct)
 	defer C.lua_settop(s, C.lua_gettop(s)-1)
-	if C.lua_type(s, 1) != C.LUA_TTABLE {
+	if C.lua_type(s, -1) != C.LUA_TTABLE {
 		return fmt.Errorf("not a table @stateSetGlobalTableField")
 	}
 	for i, fn := range field {
-		cf := C.CString(fn)
-		defer C.free(unsafe.Pointer(cf))
-		C.lua_pushstring(s, cf)
+        C.lua_pushlstring(s, (*C.char)(unsafe.Pointer(unsafe.StringData(fn))), C.size_t(len(fn)))
+        runtime.KeepAlive(fn)
 		fSet(s, i)
 		C.lua_settable(s, -3)
 	}
@@ -247,25 +257,23 @@ func stateSetGlobalTableFieldNil(s *C.lua_State, table string, field []string) (
 ////////////////////////////////
 func stateSetGlobalTableFieldString(s *C.lua_State, table string, field []string, value []string) (error) {
 	return stateSetGlobalTableField(s, table, field, func(s *C.lua_State, i int) {
-		cv := C.CString(value[i])
-		defer C.free(unsafe.Pointer(cv))
-		C.lua_pushstring(s, cv)
+        v := value[i]
+        C.lua_pushlstring(s, (*C.char)(unsafe.Pointer(unsafe.StringData(v))), C.size_t(len(v)))
+        runtime.KeepAlive(v)
 	})
 }
 
 ////////////////////////////////
 func stateSetTableByMap1(s *C.lua_State, m map[string]string, i int, k string) {
-	cKey := C.CString("")
-	C.free(unsafe.Pointer(cKey))
+    var cKey *C.char
 	lenKey := len(m)
 	if lenKey <= 0 {
 		return
 	}
 	C.lua_createtable(s, 0, C.int(lenKey))
 	for k2, v := range m {
-		cKey = C.CString(v)
-		C.lua_pushstring(s, cKey)
-		C.free(unsafe.Pointer(cKey))
+        C.lua_pushlstring(s, (*C.char)(unsafe.Pointer(unsafe.StringData(v))), C.size_t(len(v)))
+        runtime.KeepAlive(v)
 		cKey = C.CString(k2)
 		C.lua_setfield(s, -2, cKey)
 		C.free(unsafe.Pointer(cKey))
@@ -281,8 +289,6 @@ func stateSetTableByMap1(s *C.lua_State, m map[string]string, i int, k string) {
 
 ////////////////////////////////
 func stateSetTableByMapList(s *C.lua_State, l []map[string]string, k string) {
-	cKey := C.CString("")
-	C.free(unsafe.Pointer(cKey))
 	lenKey := len(l)
 	if lenKey <= 0 {
 		return
@@ -291,15 +297,15 @@ func stateSetTableByMapList(s *C.lua_State, l []map[string]string, k string) {
 	for i := 0; i < lenKey; i ++ {
 		stateSetTableByMap1(s, l[i], i+1, "")
 	}
-	cKey = C.CString(k)
+	cKey := C.CString(k)
 	C.lua_setfield(s, -2, cKey);
 	C.free(unsafe.Pointer(cKey))
 }
 	
 	////////////////////////////////
 func stateSetTableByMap2(s *C.lua_State, m map[string]map[string]string) {
-	for k, _ := range m {
-		stateSetTableByMap1(s, m[k], 0, k)
+	for k, v := range m {
+		stateSetTableByMap1(s, v, 0, k)
 	}
 }
 
