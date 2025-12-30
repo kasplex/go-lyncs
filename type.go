@@ -22,6 +22,7 @@ type poolType struct {
 	sync.Mutex
 	idle map[int64]*C.lua_State
 	inuse map[int64]*C.lua_State
+	cycle map[int64]int
 	code string
 	bc []byte
 }

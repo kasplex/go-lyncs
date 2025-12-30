@@ -62,6 +62,7 @@ func stateFromCode(code string) (*C.lua_State, []byte, error) {
 		stateClose(s)
 		return nil, nil, err
 	}
+    C.lua_gc(s, C.LUA_GCCOLLECT, 0)
 	return s, bc, nil
 }
 
@@ -87,6 +88,7 @@ func stateFromBC(bc []byte) (*C.lua_State, error) {
 		stateClose(s)
 		return nil, err
 	}
+    C.lua_gc(s, C.LUA_GCCOLLECT, 0)
 	return s, nil
 }
 
@@ -107,6 +109,7 @@ func stateSandbox() (*C.lua_State, error) {
 	C.luaopen_crypt(s)
 	C.luaopen_jit(s)
 	C.lua_settop(s, 0)
+    C.lua_gc(s, C.LUA_GCSTOP, 0)
 	for k, v := range stateRemoveMap {
 		err = stateSetGlobalTableFieldNil(s, k, v)
 		if err != nil {
@@ -226,7 +229,9 @@ func stateClose(s *C.lua_State) {
 func stateClean(s *C.lua_State) {
 	C.lua_settop(s, 0)
 	stateSetGlobalTableFieldNil(s, "_G", []string{"session", "state"})
-	C.lua_gc(s, C.LUA_GCCOLLECT, 0)
+    if int(C.lua_gc(s,C.LUA_GCCOUNT,0)) >= 8192 {
+        C.lua_gc(s, C.LUA_GCCOLLECT, 0)
+    }
 }
 
 ////////////////////////////////

@@ -27,6 +27,7 @@ func poolInit(name string) (error) {
 	lRuntime.poolMap[name] = &poolType{
 		idle: make(map[int64]*C.lua_State, lRuntime.cfg.NumWorkers),
 		inuse: make(map[int64]*C.lua_State, lRuntime.cfg.NumWorkers),
+		cycle: make(map[int64]int, lRuntime.cfg.NumWorkers),
 	}
     lRuntime.Unlock()
 	return nil
@@ -44,7 +45,9 @@ func PoolFromCode(name string, code string) (error) {
 		return err
 	}
 	lRuntime.Lock()
-	lRuntime.poolMap[name].idle[time.Now().UnixNano()] = s
+    index := time.Now().UnixNano()
+	lRuntime.poolMap[name].idle[index] = s
+	lRuntime.poolMap[name].cycle[index] = 0
 	lRuntime.poolMap[name].code = code
 	lRuntime.poolMap[name].bc = bc
 	lRuntime.Unlock()
@@ -63,7 +66,9 @@ func PoolFromBC(name string, bc []byte) (error) {
 		return err
 	}
 	lRuntime.Lock()
-	lRuntime.poolMap[name].idle[time.Now().UnixNano()] = s
+    index := time.Now().UnixNano()
+	lRuntime.poolMap[name].idle[index] = s
+	lRuntime.poolMap[name].cycle[index] = 0
 	lRuntime.poolMap[name].bc = bc
 	lRuntime.Unlock()
 	return nil
@@ -95,6 +100,7 @@ func poolLockState(pool *poolType) (*C.lua_State, int64, error) {
 		_, exists := pool.inuse[i]
 		if !exists {
 			pool.inuse[i] = s
+			pool.cycle[i] ++
 			return s, i, nil
 		}
 	}
@@ -109,6 +115,7 @@ func poolLockState(pool *poolType) (*C.lua_State, int64, error) {
 		i := time.Now().UnixNano()
 		pool.idle[i] = s
 		pool.inuse[i] = s
+		pool.cycle[i] = 0
 		return s, i, nil
 	}
 	return nil, 0, fmt.Errorf("no available @poolLockState")
@@ -116,9 +123,18 @@ func poolLockState(pool *poolType) (*C.lua_State, int64, error) {
 
 ////////////////////////////////
 func poolUnlockState(pool *poolType, index int64) {
+    var s *C.lua_State
 	pool.Lock()
-	defer pool.Unlock()
 	delete(pool.inuse, index)
+    if pool.cycle[index] >= 100000 {
+        s = pool.idle[index]
+        delete(pool.idle, index)
+        delete(pool.cycle, index)
+    }
+    pool.Unlock()
+    if s != nil {
+        stateClose(s)
+    }
 }
 
 ////////////////////////////////
