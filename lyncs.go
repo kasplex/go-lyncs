@@ -68,9 +68,12 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 		for i := iCall; i < lenCall; i ++ {
 			iSlot := 0
 			lenSlot := lRuntime.cfg.MaxInSlot
-			conflict := false
-			rwSwitch := false
+			var conflict bool
+			var rwSwitch bool
+            countConflict := 0
 			for j, _ := range slots {
+                conflict = false
+                rwSwitch = false
 				for key, rwCall := range callList[i].KeyRules {
 					rwSlot, exists := slots[j].keyRules[key]
 					if !exists {
@@ -78,22 +81,27 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 					}
 					if rwSlot == "w" {
 						conflict = true
-						break
 					}
 					if rwSlot == "r" && rwCall == "w" {
 						rwSwitch = true
-						break
+                        break
 					}
-				}
-				if conflict {
-					lenSlot = len(slots[j].list)
-					iSlot = j
-					break
 				}
 				if rwSwitch {
 					break
 				}
-				if len(slots[j].list) < lenSlot {
+				if conflict {
+                    countConflict ++
+                    if countConflict == 1 {
+                        lenSlot = len(slots[j].list)
+                        iSlot = j
+                    } else {
+                        rwSwitch = true
+                        break
+                    }
+                    continue
+				}
+				if countConflict == 0 && len(slots[j].list) < lenSlot {
 					lenSlot = len(slots[j].list)
 					iSlot = j
 				}
