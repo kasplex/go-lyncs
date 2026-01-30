@@ -139,8 +139,9 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 					}
 					r, err := PoolCallFunc(callList[j].Name, callList[j].Fn, callList[j].Session)
 					if r != nil && len(r.State) > 0 {
-						for k, s := range r.State {
-							if s["_key"] == "" || callList[j].KeyRules[s["_key"]] != "w" {
+						for k := range r.State {
+							//if s["_key"] == "" || callList[j].KeyRules[s["_key"]] != "w" {
+							if callList[j].KeyRules[k] != "w" {
 								r.State[k] = nil
 								continue
 							}
@@ -156,19 +157,22 @@ func CallFuncParallel(callList []DataCallFuncType, stateMap map[string]map[strin
 					if r == nil {
 						continue
 					}
-					for _, s := range r.State {
+					for k, s := range r.State {
 						if s == nil {
 							continue
 						}
-						if len(s) == 1 {
+						//if len(s) == 1 {
+						if len(s) == 0 {
 							mutex.Lock()
-							stateMap[s["_key"]] = nil
+							//stateMap[s["_key"]] = nil
+							stateMap[k] = nil
 							mutex.Unlock()
 							continue
 						}
 						mutex.Lock()
-						stateMap[s["_key"]] = s
-						delete(stateMap[s["_key"]], "_key")
+						//stateMap[s["_key"]] = s
+						stateMap[k] = s
+						//delete(stateMap[s["_key"]], "_key")
 						mutex.Unlock()
 					}
 				}

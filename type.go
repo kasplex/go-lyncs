@@ -52,7 +52,8 @@ type DataResultType struct {
 	OpParams map[string]string
 	OpRules map[string]string
 	KeyRules map[string]string
-	State []map[string]string
+	//State []map[string]string
+	State map[string]map[string]string
 	ExData map[string]string
 }
 
