@@ -434,7 +434,6 @@ func stateGetResult(s *C.lua_State) (*DataResultType, error) {
 		} else if key == "keyRules" {
 			result.KeyRules = stateGetTableMap1(s, 16)
 		} else if key == "state" {
-			//result.State = stateGetTableMapList(s, 16, 8)
 			result.State = stateGetTableMap2(s, 16, 8)
 		}
 		C.lua_settop(s, C.lua_gettop(s)-1)
